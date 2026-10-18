@@ -1,0 +1,15 @@
+{
+  "name": "smith",
+  "version": "0.1.0",
+  "description": "A minimal, functional-style agent harness built for learning",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

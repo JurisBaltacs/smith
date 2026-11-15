@@ -20,5 +20,12 @@ export const resolveInWorkspace = (workspace, filePath) => {
     throw new Error(`Path "${filePath}" is outside the workspace.`);
   }
 
+  // Secrets files are off limits even inside the workspace. Whatever the model
+  // reads is sent to the provider, so an API key in .env would leak.
+  const name = path.basename(resolved);
+  if (name === '.env' || (name.startsWith('.env.') && name !== '.env.example')) {
+    throw new Error(`Path "${filePath}" is a secrets file and cannot be accessed.`);
+  }
+
   return resolved;
 };

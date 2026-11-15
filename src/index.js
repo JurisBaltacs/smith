@@ -49,6 +49,10 @@ const main = async () => {
     console.error('Missing API_KEY. Copy .env.example to .env or export API_KEY.');
     process.exit(1);
   }
+  // The config holds its own copy of the key. Removing it from the environment
+  // keeps it out of every program the bash tool starts.
+  delete process.env.API_KEY;
+  delete process.env.OPENAI_API_KEY;
 
   const rl = readline.createInterface({ input: stdin, output: stdout });
   rl.on('SIGINT', () => rl.close());

@@ -13,6 +13,7 @@
 // the finished conversation is returned to the caller.
 
 import { toolSchemas } from './tools/schemas.js';
+import { isContextOverflow } from './context.js';
 
 // Run async work one item at a time, in order. Tool calls must run
 // sequentially because each one may stop to ask the user for approval.
@@ -27,8 +28,25 @@ export const runAgentTurn = async ({
   callModel,
   executeToolCall,
   maxSteps,
+  // Keeps the conversation inside the context window (see context.js). The
+  // default does nothing, so the loop also works without it.
+  fitContext = async (conversation) => conversation,
   onEvent = () => {},
 }) => {
+  // THINK, with a safety net: if the provider says the conversation is too
+  // long anyway (our token count is partly an estimate), compact and retry
+  // once. Returns the conversation that was actually sent with the reply.
+  const think = async (conversation) => {
+    try {
+      return { sent: conversation, reply: await callModel(conversation, toolSchemas) };
+    } catch (error) {
+      if (!isContextOverflow(error)) throw error;
+      const compacted = await fitContext(conversation, { force: true, onEvent });
+      if (compacted === conversation) throw error; // nothing left to compact
+      return { sent: compacted, reply: await callModel(compacted, toolSchemas) };
+    }
+  };
+
   const step = async (conversation, stepsLeft) => {
     // Safety valve: a confused model could otherwise loop forever (and burn money).
     if (stepsLeft === 0) {
@@ -36,9 +54,14 @@ export const runAgentTurn = async ({
       return conversation;
     }
 
+    // Make room first, if the conversation is getting close to the limit.
+    // This runs before every model call, not once per user message, because a
+    // single message can lead to dozens of tool calls.
+    const fitted = await fitContext(conversation, { onEvent });
+
     // THINK: send the whole history plus the tool menu to the model.
-    const reply = await callModel(conversation, toolSchemas);
-    const withReply = [...conversation, reply];
+    const { sent, reply } = await think(fitted);
+    const withReply = [...sent, reply];
 
     if (reply.content) onEvent({ type: 'assistant', content: reply.content });
 

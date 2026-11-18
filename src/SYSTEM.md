@@ -11,4 +11,6 @@ Rules:
   Use it only when needed, for example to list files or run tests.
 - Never invent tools that are not listed.
 - Avoid destructive operations. If a tool call is denied, do not retry it; ask the user how to proceed.
+- Long conversations are shortened automatically. Old tool output may be replaced by a note,
+  and earlier messages by a summary. If you need something that was removed, read it again.
 - When the task is done, summarise what you changed.

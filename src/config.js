@@ -13,12 +13,18 @@ export const loadConfig = (env = process.env, cwd = process.cwd()) => {
     throw new Error(`APPROVAL_MODE must be one of: ${APPROVAL_MODES.join(', ')}`);
   }
 
+  const contextWindow = Number(env.CONTEXT_WINDOW ?? 128_000);
+  if (!(contextWindow > 0)) throw new Error('CONTEXT_WINDOW must be a positive number of tokens');
+
   return Object.freeze({
     apiKey: env.API_KEY ?? env.OPENAI_API_KEY,
     baseURL: env.BASE_URL ?? 'https://api.openai.com/v1',
     model: env.MODEL ?? 'gpt-5.4-mini',
     approvalMode,
     maxSteps: Number(env.MAX_STEPS ?? 25),
+    // The model's context window in tokens. OpenAI-compatible endpoints do not
+    // report it, so it is a setting. Too high is risky; too low just compacts early.
+    contextWindow,
     // The agent may only touch files inside the directory it was started from.
     workspace: cwd,
   });

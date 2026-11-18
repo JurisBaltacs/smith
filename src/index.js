@@ -15,6 +15,7 @@ import { createModelClient } from './model.js';
 import { createApprover } from './approval.js';
 import { createToolExecutor } from './tools/dispatch.js';
 import { runAgentTurn } from './agentLoop.js';
+import { createContextManager } from './context.js';
 
 const dim = (text) => `\x1b[2m${text}\x1b[0m`;
 const preview = (text, lines = 8) => {
@@ -28,6 +29,10 @@ const renderers = {
   tool_call: ({ toolCall: { function: fn } }) => console.log(`\n→ ${fn.name} ${fn.arguments}`),
   tool_result: ({ result }) => console.log(dim(preview(result.content))),
   step_limit: () => console.log('\n[stopped: step limit reached]'),
+  context_pruned: ({ before, after }) =>
+    console.log(dim(`[context: old tool output pruned, ~${before} → ~${after} tokens]`)),
+  context_compacted: ({ before, after }) =>
+    console.log(dim(`[context: history compacted into a summary, ~${before} → ~${after} tokens]`)),
 };
 const render = (event) => renderers[event.type]?.(event);
 
@@ -61,14 +66,29 @@ const main = async () => {
   const systemPrompt = await fs.readFile(new URL('./SYSTEM.md', import.meta.url), 'utf-8');
   const initialMessages = [{ role: 'system', content: systemPrompt }];
 
+  const callModel = createModelClient(config);
+  const fitContext = createContextManager({ callModel, contextWindow: config.contextWindow });
+
   const turnDependencies = {
-    callModel: createModelClient(config),
+    callModel,
+    fitContext,
     executeToolCall: createToolExecutor({
       workspace: config.workspace,
       approve: createApprover(config.approvalMode, ask),
     }),
     maxSteps: config.maxSteps,
     onEvent: render,
+  };
+
+  // `/compact [focus]` summarises now; anything else is a message for the agent.
+  const handleInput = async (input, messages) => {
+    if (input !== '/compact' && !input.startsWith('/compact ')) {
+      return runAgentTurn({ ...turnDependencies, messages: [...messages, { role: 'user', content: input }] });
+    }
+    const focus = input.slice('/compact'.length).trim() || undefined;
+    const compacted = await fitContext(messages, { force: true, focus, onEvent: render });
+    if (compacted === messages) console.log('[nothing to compact yet]');
+    return compacted;
   };
 
   // The conversation is a value passed from turn to turn, never a global that
@@ -85,10 +105,7 @@ const main = async () => {
     if (!input) return converse(messages);
 
     try {
-      const userMessage = { role: 'user', content: input };
-      return converse(
-        await runAgentTurn({ ...turnDependencies, messages: [...messages, userMessage] }),
-      );
+      return converse(await handleInput(input, messages));
     } catch (error) {
       // Because nothing was mutated, a failed turn simply leaves the previous
       // conversation as it was.
@@ -98,7 +115,7 @@ const main = async () => {
   };
 
   console.log(`smith: model ${config.model}, workspace ${config.workspace}, approval ${config.approvalMode}`);
-  console.log('Type a task. /clear resets the conversation, /exit quits.');
+  console.log('Type a task. /compact summarises the history, /clear resets it, /exit quits.');
   return converse(initialMessages);
 };
 
